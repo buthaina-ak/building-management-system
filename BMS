@@ -1,0 +1,383 @@
+#include<EEPROM.h>
+char cmd[100];  // array used to read the commands thats come from android application  used with varible cmdIndex
+unsigned int cmdIndex = 0, one_log = 0, cnt = 0;
+
+const int buzz = 3;
+const int light = 9;
+const int light2 = 11;
+const int light3 = 12;
+const int dopen = 4;
+const int dclose = 5;
+const int fun = 10;
+//------------------------sensors-------------------//
+const int motion1 = 6;
+const int motion2 = 7;
+const int gas = A2;
+const int smok = A3;
+const int volt = A0;
+const int light_s = A5;
+const int temp = A4;
+const int current = A1;
+unsigned long previousMillis = 0;        // will store last time LED was updated
+
+const long interval = 5000;
+unsigned int val = 0, val_comp = 0;
+float Vi, Vo = 0, v_camp;
+const float x = 100000.;
+const float x1 = 10000.;
+int m1 = 0, m2 = 0, m3 = 0, m4 = 0, m5 = 0;
+int s = 0;
+
+int mVperAmp = 185; // use 100 for 20A Module and 66 for 30A Module
+int ACSoffset = 2500; 
+
+bool mode = false, open = false;
+
+void volt_level()  //   battery monitor function
+{
+  Vo = analogRead(volt);
+  Vo = (Vo * 5.0) / 1023.;
+  Vi = (Vo / (x1 / (x + x1)));
+  Vi = Vi - 5;
+  Serial.print("V");
+  if ((int)Vi <= 9)
+  {
+    Serial.print("0");
+    Serial.println((int)Vi);
+  }
+  else
+  {
+    Serial.println((int)Vi);
+  }
+
+}
+void sens_motion1()  //   battery monitor function
+{
+  if (digitalRead(motion1) == HIGH && m1 == 0)
+  {
+    if (mode == true) {
+      digitalWrite(light2, LOW);
+      digitalWrite(light3, LOW);
+    }
+    Serial.println("m11");
+    m1 = 1;
+  }
+  else if (digitalRead(motion1) == LOW && m1 == 1)
+  {
+    if (mode == true) {
+      digitalWrite(light2, HIGH);
+      digitalWrite(light3, HIGH);
+    }
+    Serial.println("m10");
+    m1 = 0;
+  }
+}
+void sens_motion2()  //   battery monitor function
+{
+  if (digitalRead(motion2) == HIGH && m2 == 0)
+  {
+    if (mode == true && s == 0) {
+      s = 1;
+      analogWrite(light, 0);
+      open_door();
+    }
+    Serial.println("m21");
+    m2 = 1;
+  }
+  else if (digitalRead(motion2) == LOW && m2 == 1)
+  {
+    Serial.println("m20");
+    m2 = 0;
+  }
+}
+void gas_sen()  //   battery monitor function
+{
+
+  if (analogRead(gas) >= 500 && m3 == 0)
+  {
+    if (mode == true || mode==false) {
+      digitalWrite(buzz, LOW);
+    }
+    Serial.println("g1");
+    m3 = 1;
+  }
+  else if (analogRead(gas) < 200 && m3 == 1)
+  {
+    if (mode == true || mode==false) {
+      digitalWrite(buzz, HIGH);
+    }
+    Serial.println("g0");
+    m3 = 0;
+  }
+}
+void smoke_sen()  //   battery monitor function
+{
+  if (analogRead(smok) >= 500 && m4 == 0)
+  {
+    if (mode == true || mode==false) {
+      digitalWrite(buzz, LOW);
+    }
+    Serial.println("s1");
+    m4 = 1;
+  }
+  else if (analogRead(smok) < 200 && m4 == 1)
+  {
+    if (mode == true || mode==false) {
+      digitalWrite(buzz, HIGH);
+    }
+    Serial.println("s0");
+    m4 = 0;
+  }
+}
+void light_sen()  //   battery monitor function
+{
+
+  if (analogRead(light_s) >= 500 && m5 == 0)
+  {
+    if (mode == true) {
+      // analogWrite(light, 255);
+      digitalWrite(light2, HIGH);
+      digitalWrite(light3, HIGH);
+    }
+    Serial.println("l0");
+    m5 = 1;
+  }
+  else if (analogRead(light_s) < 500 && m5 == 1)
+  {
+    if (mode == true) {
+      // analogWrite(light, 0);
+      digitalWrite(light2, LOW);
+      digitalWrite(light3, LOW);
+    }
+    Serial.println("l1");
+    m5 = 0;
+  }
+}
+void temperature()  //   battery monitor function
+{
+  int cel = 0;
+  val = analogRead(temp);
+  cel = (val / 2);
+  cel = (cel + 273) / 10;
+  Serial.print("T");
+  val_comp = cel;
+  if (cel > 35)
+  {
+    Serial.print("H");
+    Serial.println(cel);
+    if (mode == true)
+    {
+      if (cel >= 40) {
+        analogWrite(fun, 255);
+      }
+      else if (cel >= 35 && cel < 40) {
+        analogWrite(fun, 128);
+      }
+      else if (cel >= 20 && cel < 35) {
+        analogWrite(fun, 0);
+      }
+    }
+  }
+  else
+  {
+    Serial.print("N");
+    Serial.println(cel);
+  }
+}
+void current_meas()
+{
+ int RawValue = analogRead(current);//reading the value from the analog pin
+ double Voltage = (RawValue / 1024.0) * 5000; // Gets you mV
+ double Amps = ((Voltage - ACSoffset) / mVperAmp);
+ Amps=Amps*100;
+ Serial.print("A");
+ Serial.println((int)Amps);
+
+  Serial.print("A");
+  if ((int)Amps <= 9)
+  { Serial.print("00");
+    Serial.println((int)Amps);
+  }
+  else if ((int)Amps <= 99 && (int)Amps>9)
+  { Serial.print("0");
+    Serial.println((int)Amps);
+  }
+  else
+  {
+    Serial.println((int)Amps);
+  }
+
+}
+void exeCmd() {  // this function for translate the comand come to reaction
+  if (mode == false)
+  {
+    if (cmd[0] == 'f' && cmd[1] == 'u' && cmd[2] == 'n' && cmd[3] == '1') { //rigt
+      analogWrite(fun, 0);
+      Serial.println("fun1");
+    }
+    if (cmd[0] == 't' && cmd[1] == 'e' && cmd[2] == 's' && cmd[3] == 't') { //rigt
+      test_control();
+    }
+    else if (cmd[0] == 'f' && cmd[1] == 'u' && cmd[2] == 'n' && cmd[3] == '2') { //left
+      analogWrite(fun, 128);
+      Serial.println("fun2");
+    }
+    else if (cmd[0] == 'f' && cmd[1] == 'u' && cmd[2] == 'n' && cmd[3] == '3') { //frnt
+      analogWrite(fun, 255);
+      Serial.println("fun3");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '1' && cmd[3] == '1') { //back
+      analogWrite(light, 255);
+      Serial.println("li11");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '1' && cmd[3] == '2') { //stop
+      analogWrite(light, 128);
+      Serial.println("li12");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '1' && cmd[3] == '3') { //auto
+      analogWrite(light, 0);
+      Serial.println("li13");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '2' && cmd[3] == '0') { //back
+      digitalWrite(light2, LOW);
+      Serial.println("li20");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '2' && cmd[3] == '1') { //stop
+      digitalWrite(light2, HIGH);
+      Serial.println("li21");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '3' && cmd[3] == '0') { //back
+      digitalWrite(light3, LOW);
+      Serial.println("li30");
+    }
+    else if (cmd[0] == 'l' && cmd[1] == 'i' && cmd[2] == '3' && cmd[3] == '1') { //stop
+      digitalWrite(light3, HIGH);
+      Serial.println("li31");
+    }
+    else if (cmd[0] == 'd' && cmd[1] == 'o' && cmd[2] == 'r' && cmd[3] == '0') { //back
+      close_door();
+    }
+    else if (cmd[0] == 'd' && cmd[1] == 'o' && cmd[2] == 'r' && cmd[3] == '1') { //stop
+      open_door();
+    }
+    else if (cmd[0] == 'a' && cmd[1] == 'u' && cmd[2] == 't' && cmd[3] == 'o') { //stop
+      
+ analogWrite(fun, 0);
+      mode = true;
+    }
+  }
+  else if (mode == true)
+  {
+    if (cmd[0] == 'm' && cmd[1] == 'a' && cmd[2] == 'n' && cmd[3] == 'u') { //auto
+
+      mode = false;
+    }
+  }
+}
+void open_door()
+{
+  if (open == false)
+  {
+    digitalWrite(dopen, HIGH);
+    digitalWrite(dclose, LOW);
+    delay(200);
+    digitalWrite(dopen, LOW);
+    digitalWrite(dclose, LOW);
+    open = true; EEPROM.write(1, 1);
+    Serial.println("dor1");
+  }
+}
+void test_control()
+{
+  digitalWrite(light2, HIGH);
+  digitalWrite(light3, HIGH);
+  analogWrite(light, 255);
+  digitalWrite(buzz, LOW);
+  digitalWrite(dopen, HIGH);
+  digitalWrite(dclose, LOW);
+  delay(200);
+  digitalWrite(dopen, LOW);
+  delay(500);
+  digitalWrite(dclose, HIGH);
+  delay(200);
+  digitalWrite(dopen, LOW);
+  digitalWrite(dclose, LOW);
+  digitalWrite(light2, LOW);
+  digitalWrite(light3, LOW);
+  digitalWrite(buzz, HIGH);
+  analogWrite(light, 0);
+}
+void close_door()
+{
+  if (open == true)
+  {
+    digitalWrite(dopen, LOW);
+    digitalWrite(dclose, HIGH);
+    delay(200);
+    digitalWrite(dopen, LOW);
+    digitalWrite(dclose, LOW);
+    open = false;
+    EEPROM.write(1, 0);
+    Serial.println("dor0");
+  }
+}
+void setup() {
+  Serial.begin(9600);
+  pinMode(fun, OUTPUT);
+  pinMode(light, OUTPUT);
+  pinMode(light2, OUTPUT);
+  pinMode(light3, OUTPUT);
+  pinMode(dopen, OUTPUT);
+  pinMode(dclose, OUTPUT);
+  pinMode(buzz, OUTPUT);
+  digitalWrite(buzz, HIGH);
+   analogWrite(fun, 0);
+  if (EEPROM.read(1) == 0) {
+    open = false;
+  }
+  else if (EEPROM.read(1) == 1) {
+    open = true;
+  }
+  else {
+    open = false;
+    EEPROM.write(1, 0);
+  }
+  close_door();
+}
+
+void loop() {
+  if (Serial.available()) {     // chek any data would come from the android
+    char c = (char)Serial.read();
+    if (c == '\n') {
+      exeCmd();  // execute the command
+      cmdIndex = 0; // reset the cmdIndex
+    } else {
+      cmd[cmdIndex] = c;
+      if (cmdIndex < 99) cmdIndex++;
+    }
+  }
+  sens_motion1();
+  sens_motion2();
+  gas_sen();
+  smoke_sen();
+  light_sen();
+
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    volt_level();
+    temperature();
+    current_meas();
+    if (s == 1)
+    {
+      s++;
+    }
+    if (s == 2 && m2 == 0)
+    {
+      analogWrite(light, 255);
+      close_door();
+      s = 0;
+    }
+  }
+}
