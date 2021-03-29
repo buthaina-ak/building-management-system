@@ -1,0 +1,1703 @@
+using System;
+using System.Data;
+using System.Windows.Forms;
+using MetroFramework.Forms;
+using MetroFramework;
+using System.IO.Ports;
+using System.IO;
+using System.Data.SqlClient;
+using System.Text.RegularExpressions;
+using iTextSharp.text;
+using iTextSharp.text.pdf;
+using Microsoft.VisualBasic;
+
+
+
+
+
+namespace building_monitor
+{
+    public partial class Main : MetroForm
+    {
+        string w = null;
+        SerialPort sp = new SerialPort("COM1", 9600, Parity.None, 8, StopBits.One);
+
+        public string username = null;
+        public string password = null;
+        private SqlConnection sqlConnect = new SqlConnection(@"Data Source=SCC-PC\AMAL; Initial Catalog=BMS; Integrated Security=true;");
+        SqlCommand sqlCommand = new SqlCommand();
+        private SqlDataAdapter sqlDataAdapter = null;
+        private SqlCommandBuilder sqlCommandBuilder = null;
+        private DataTable dataTable = null;
+        private String selectQueryString = null;
+        SqlDataReader d;
+        DateTime start_time = new DateTime();
+        DateTime stop_time = new DateTime();
+        float current;
+        float voltage;
+
+        public Main()
+        {
+            InitializeComponent();
+            this.BorderStyle = MetroFormBorderStyle.FixedSingle;
+            this.ShadowType = MetroFormShadowType.AeroShadow;
+        }
+       
+        private void Main_Load(object sender, EventArgs e)
+        {
+            metroPanel13.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel4.Visible = true;
+            metroPanel14.Enabled = false;
+            metroPanel15.Enabled = false;
+            metroPanel17.Enabled = false;
+            metroPanel18.Enabled = false;
+            metroPanel20.Enabled = false;
+            metroPanel12.Enabled = false;
+
+            RefreshSerialPortList();
+           // metroLabel16.Text = "Please Login to access the system";
+            metroTextButton6.Enabled = false;
+            metroTextButton8.Enabled = false;
+            metroTextButton4.Enabled = false;
+            metroTextButton5.Enabled = false;
+            metroTextButton2.Enabled = false;
+            metroTextButton3.Enabled = false;
+            metroTextButton7.Enabled = false;
+            
+
+        }
+        void sErial()
+        {
+            string portName = null;
+            portName = metroComboBox1.SelectedItem.ToString();
+            if (portName == null)
+            {
+                return;
+            }
+            sp = new SerialPort(portName, 9600, Parity.None, 8, StopBits.One);
+            sp.DataReceived += new SerialDataReceivedEventHandler(datareceivedhandler);
+            sp.Open();
+        }
+
+
+        private void datareceivedhandler(object sender, SerialDataReceivedEventArgs e)
+        {
+            CheckForIllegalCrossThreadCalls = false;
+            sp = (SerialPort)sender;
+            w = sp.ReadLine();
+            if (w != string.Empty)
+            {
+                w.ToCharArray();
+                try
+                {
+                    if (w[0] == 'T')
+                    {
+                        if (w[1] == 'H')
+                        {
+                            label43.Text= w[2].ToString() + w[3].ToString();
+                            label36.ForeColor = System.Drawing.Color.Red;
+                            label36.Text = "OVER";
+                            sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                            if (sqlConnect.State == ConnectionState.Closed)
+                                sqlConnect.Open();
+                            sqlCommand.Parameters.Clear();
+                            sqlCommand.Parameters.AddWithValue("@rep_name", 6);
+                            sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                            sqlCommand.Parameters.AddWithValue("@r_data", "Temprture is " + label43.Text);
+                            sqlCommand.ExecuteNonQuery();
+                            if (sqlConnect.State == ConnectionState.Open)
+                                sqlConnect.Close();
+
+                        }
+                        if (w[1] == 'N')
+                        {
+                            label43.Text = w[2].ToString() + w[3].ToString();
+                            label36.ForeColor = System.Drawing.Color.Black;
+                            label36.Text ="NORMAL";
+
+                        }
+
+                    }
+                    else if (w[0] == 'V' && w.Length>=2)
+                    {
+                        label7.Text = w[1].ToString() + w[2].ToString();
+                        voltage= ((w[1]-48)*10) + w[2]-48;
+
+                        sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                        if (sqlConnect.State == ConnectionState.Closed)
+                            sqlConnect.Open();
+                        sqlCommand.Parameters.Clear();
+                        sqlCommand.Parameters.AddWithValue("@rep_name", 7);
+                        sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                        sqlCommand.Parameters.AddWithValue("@r_data", "Voltage is " + label7.Text);
+                        sqlCommand.ExecuteNonQuery(); 
+                            if (sqlConnect.State == ConnectionState.Open)
+                                sqlConnect.Close();
+
+                    }
+                    else if (w[0] == 'A' && w.Length >= 2)
+                    {
+
+                        //current = ((w[1]-48)*10) + w[2]-48;
+                         current = ((w[1] - 48) * 100) + ((w[1] - 48) * 10) + (w[1] - 48);
+                        current = current / 100;
+
+                        sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                        if (sqlConnect.State == ConnectionState.Closed)
+                            sqlConnect.Open();
+                        sqlCommand.Parameters.Clear();
+                        sqlCommand.Parameters.AddWithValue("@rep_name", 8);
+                        sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                        sqlCommand.Parameters.AddWithValue("@r_data",current);
+                        sqlCommand.ExecuteNonQuery();
+                        if (sqlConnect.State == ConnectionState.Open)
+                            sqlConnect.Close();
+
+                    }
+                    else if (w[0] == 's' && w[1] == 'y' && w[2] == 's')
+                    {
+                        if (w[3] == 'o' && w[4] == 'n')
+                        {
+                            enableauto();                          
+                        }
+                        else if (w[3] == 'o' && w[4] == 'f')
+                        {
+                            disableauto();
+                        }
+                    }                    
+                    else if (w[0] == 'l')
+                    {
+                        if (w[1] == '1')
+                        {
+                            label16.Text = "LIGHT ON";
+                            label16.ForeColor = System.Drawing.Color.Red;
+                                start_time = System.DateTime.Now;
+                            sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                                if (sqlConnect.State == ConnectionState.Closed)
+                                    sqlConnect.Open();
+                                sqlCommand.Parameters.Clear();
+                                sqlCommand.Parameters.AddWithValue("@rep_name", 3);
+                                sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                            sqlCommand.Parameters.AddWithValue("@r_data", "LIGHT ON");
+                            sqlCommand.ExecuteNonQuery();
+                                if (sqlConnect.State == ConnectionState.Open)
+                                    sqlConnect.Close();
+                            }
+                            else if (w[1] == '0')
+                            {
+                            label16.ForeColor = System.Drawing.Color.Black;
+                            label16.Text = "NORMAL";
+                            try
+                            {
+                                stop_time = DateTime.Now;
+                                
+                                sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                                if (sqlConnect.State == ConnectionState.Closed)
+                                    sqlConnect.Open();
+                                sqlCommand.Parameters.Clear();
+                                sqlCommand.Parameters.AddWithValue("@rep_name", 3);
+                                sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                                sqlCommand.Parameters.AddWithValue("@r_data", "LIGHT oFF");
+                                sqlCommand.ExecuteNonQuery();
+                                if (sqlConnect.State == ConnectionState.Open)
+                                    sqlConnect.Close();
+                            }
+                            catch(Exception ex)
+                            {
+
+                            }
+
+                            try
+                            {
+                                label7.Text = w[1].ToString() + w[2].ToString();
+                                voltage = ((w[1] - 48) * 10) + w[2] - 48;
+
+                                current = ((w[1] - 48) * 100) + ((w[1] - 48) * 10) + (w[1] - 48);
+                                current = current / 100;
+
+                                //stop_time = System.DateTime.Now;
+                                int dif_hor =(stop_time.Hour)-(start_time.Hour);
+                                int dif_min= (stop_time.Minute) - (start_time.Minute);
+                                dif_min += dif_hor * 60;
+                                float wat = (voltage * current);
+                                wat = wat * dif_min;
+                                wat = wat / 60;
+
+
+                                sqlCommand = new SqlCommand("INSERT INTO [light_power] ([start_time],[end_time],[wat]) VALUES ( @start_time,@stop_time,@wat)", sqlConnect);
+                                if (sqlConnect.State == ConnectionState.Closed)
+                                    sqlConnect.Open();
+                                sqlCommand.Parameters.Clear();
+                               // sqlCommand.Parameters.AddWithValue("@rep_name", 3);
+                                sqlCommand.Parameters.AddWithValue("@start_time", start_time);
+                                sqlCommand.Parameters.AddWithValue("@stop_time", stop_time);
+                                sqlCommand.Parameters.AddWithValue("@wat", wat);
+                                sqlCommand.ExecuteNonQuery();
+                                if (sqlConnect.State == ConnectionState.Open)
+                                    sqlConnect.Close();
+                            }
+                            catch (Exception ex)
+                            {
+
+                            }
+
+
+                        }
+                        }
+                        else if (w[0] == 'm')
+                        {
+                        if (w[1] == '1')
+                        {
+                            if (w[2] == '1')
+                            {
+                                label23.Text = "warning";
+                                label23.ForeColor = System.Drawing.Color.Red;
+                                sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                                if (sqlConnect.State == ConnectionState.Closed)
+                                    sqlConnect.Open();
+                                sqlCommand.Parameters.Clear();
+                                sqlCommand.Parameters.AddWithValue("@rep_name", 4);
+                                sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                                sqlCommand.Parameters.AddWithValue("@r_data", "motion 1  warning");
+                                sqlCommand.ExecuteNonQuery();
+                                if (sqlConnect.State == ConnectionState.Open)
+                                    sqlConnect.Close();
+                            }
+                            if (w[2] == '0')
+                            {
+                                label23.ForeColor = System.Drawing.Color.Black;
+                                label23.Text = "NORMAL";
+                                
+
+                            }
+                        }
+                        else if (w[1] == '2')
+                        {
+                            if (w[2] == '1')
+                            {
+                                label10.Text = "WARNING";
+                                label10.ForeColor = System.Drawing.Color.Red;
+                                sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                                if (sqlConnect.State == ConnectionState.Closed)
+                                    sqlConnect.Open();
+                                sqlCommand.Parameters.Clear();
+                                sqlCommand.Parameters.AddWithValue("@rep_name", 5);
+                                sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                                sqlCommand.Parameters.AddWithValue("@r_data", "motion 2  warning"); ;
+                                sqlCommand.ExecuteNonQuery();
+                                if (sqlConnect.State == ConnectionState.Open)
+                                    sqlConnect.Close();
+                            }
+                            if (w[2] == '0')
+                            {
+                                label10.ForeColor = System.Drawing.Color.Black;
+                                label10.Text = "NORMAL";
+                                
+
+                            }
+                        }
+                    }
+                    else if (w[0] == 'g')
+                    {
+                        if (w[1] == '1')
+                        {
+                            label1.Text = "WARNING";
+                            label1.ForeColor = System.Drawing.Color.Red;
+                            sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                            if (sqlConnect.State == ConnectionState.Closed)
+                                sqlConnect.Open();
+                            sqlCommand.Parameters.Clear();
+                            sqlCommand.Parameters.AddWithValue("@rep_name", 2);
+                            sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                            sqlCommand.Parameters.AddWithValue("@r_data", "GAS Detacted");
+                            sqlCommand.ExecuteNonQuery();
+                            if (sqlConnect.State == ConnectionState.Open)
+                                sqlConnect.Close();
+                            using (gasalarm form2 = new gasalarm())
+                            {
+                                form2.ShowDialog();
+                            }
+
+                        }
+                        if (w[1] == '0')
+                        {
+                            label1.ForeColor = System.Drawing.Color.Black;
+                            label1.Text = "NORMAL";
+                            
+                        }
+                    }
+                    else if (w[0] == 'd' && w[1] == 'o' && w[2] == 'r')
+                    {
+                        if (w[3] == '1')
+                        {
+                            metroTextButton13.Enabled = false;
+                            metroTextButton14.Enabled = true;
+                        }
+                        if (w[3] == '0')
+                        {
+                            metroTextButton13.Enabled = true;
+                            metroTextButton14.Enabled = false;
+                        }
+                    }
+                    else if (w[0] == 's')
+                        {
+                            if (w[1] == '1')
+                            {
+                                label35.Text = "WARNING";
+                                label35.ForeColor = System.Drawing.Color.Red;
+                            sqlCommand = new SqlCommand("INSERT INTO [DMS_report] ([sen_id],  [r_time],[r_data]) VALUES (@rep_name, @rep_date,@r_data)", sqlConnect);
+                            if (sqlConnect.State == ConnectionState.Closed)
+                                sqlConnect.Open();
+                            sqlCommand.Parameters.Clear();
+                            sqlCommand.Parameters.AddWithValue("@rep_name", 1);
+                            sqlCommand.Parameters.AddWithValue("@rep_date", System.DateTime.Now);
+                            sqlCommand.Parameters.AddWithValue("@r_data", "Smoke Detacted");
+                            sqlCommand.ExecuteNonQuery();
+                                if (sqlConnect.State == ConnectionState.Open)
+                                    sqlConnect.Close();
+                            using (smokalarmcs form2 = new smokalarmcs())
+                            {
+                                form2.ShowDialog();
+                            }
+
+                        }
+                            if (w[1] == '0')
+                            {
+                            label35.ForeColor = System.Drawing.Color.Black;
+                            label35.Text = "NORMAL";
+                                
+                            }
+                        }
+                    else if (w[0] == 'l' && w[1] == 'i')
+                    {
+                        if (w[2] == '2')
+                        {
+                            if (w[3] == '1')
+                            {
+                                metroTextButton20.Enabled = false;
+                                metroTextButton19.Enabled = true;
+
+                            }
+                            else if (w[3] == '0')
+                            {
+                                metroTextButton19.Enabled = false;
+                                metroTextButton20.Enabled = true;
+                            }
+                        }
+                        else if (w[2] == '3')
+                        {
+                            if (w[3] == '1')
+                            {
+                                metroTextButton24.Enabled = false;
+                                metroTextButton21.Enabled = true;
+
+                            }
+                            else if (w[3] == '0')
+                            {
+                                metroTextButton24.Enabled = true;
+                                metroTextButton21.Enabled = false;
+                            }
+                        }
+                        else if (w[2] == '1')
+                        {
+                            if (w[3] == '1')
+                            {
+                                metroTextButton16.Enabled = true;
+                                metroTextButton15.Enabled = true;
+                                metroTextButton22.Enabled = false;
+
+                            }
+                            else if (w[3] == '2')
+                            {
+                                metroTextButton16.Enabled = true;
+                                metroTextButton15.Enabled = false;
+                                metroTextButton22.Enabled = true;
+                            }
+                            else if (w[3] == '3')
+                            {
+                                metroTextButton16.Enabled = false;
+                                metroTextButton15.Enabled = true;
+                                metroTextButton22.Enabled = true;
+                            }
+                        }
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    if (sqlConnect.State == ConnectionState.Open)
+                    { sqlConnect.Close(); }
+                }
+            }
+        }
+
+        public void enableauto()
+        {
+            metroTextButton12.Enabled = true;
+            metroTextButton27.Enabled = true;
+            metroTextButton17.Enabled = true;
+            metroTextButton18.Enabled = false;
+            metroTextButton28.Enabled = false;
+            metroTextButton11.Enabled = false;            
+            metroTextButton13.Enabled = false;
+            metroTextButton14.Enabled = false;
+            metroTrackBar1.Enabled = false;
+            metroTextButton24.Enabled = false;
+            metroTextButton21.Enabled = false;
+            metroTextButton15.Enabled = false;
+            metroTextButton16.Enabled = false;
+            metroTextButton19.Enabled = false;
+            metroTextButton20.Enabled = false;
+            metroTextButton22.Enabled = false;
+        }
+        public void disableauto()
+        {
+            metroTextButton18.Enabled = true;
+            metroTextButton17.Enabled = false;
+            metroTextButton12.Enabled = false;
+            metroTextButton28.Enabled = true;
+            metroTextButton27.Enabled = false;
+            metroTextButton11.Enabled = true;
+            metroTextButton13.Enabled = true;
+            metroTextButton14.Enabled = true;
+            metroTrackBar1.Enabled = true;
+            metroTextButton15.Enabled = true;
+            metroTextButton16.Enabled = true;
+            metroTextButton19.Enabled = true;
+            metroTextButton20.Enabled = true;
+            metroTextButton22.Enabled = true;
+        }
+        
+        private void RefreshSerialPortList()
+        {
+            metroComboBox1.Items.Clear();
+            metroComboBox1.Items.Add("Refresh List");
+            foreach (string portName in System.IO.Ports.SerialPort.GetPortNames())
+            {
+                metroComboBox1.Items.Add("COM" + Regex.Replace(portName.Substring("COM".Length, portName.Length - "COM".Length), "[^.0-9]", "\0"));
+              
+            }
+        }
+
+        private void EnableControls()
+        {
+            // Enable/disable controls based on whether the port is open or not
+            metroComboBox1.Enabled = !sp.IsOpen;
+            metroPanel14.Enabled = sp.IsOpen;
+            metroPanel15.Enabled = sp.IsOpen;
+            metroPanel17.Enabled = sp.IsOpen;
+            metroPanel18.Enabled = sp.IsOpen;
+            metroPanel20.Enabled = sp.IsOpen;
+            metroPanel12.Enabled = sp.IsOpen;
+            
+            if (sp.IsOpen) metroTile1.Text = "DisConnect";
+            else metroTile1.Text = "Connect";
+        }
+
+        private void metroTile2_Click(object sender, EventArgs e)
+        {
+            metroStyleManager1.Theme = metroStyleManager1.Theme == MetroThemeStyle.Light ? MetroThemeStyle.Dark : MetroThemeStyle.Light;
+            this.Theme= metroStyleManager1.Theme == MetroThemeStyle.Light ? MetroThemeStyle.Dark : MetroThemeStyle.Light;
+        }
+            
+        private void metroTileSwitch_Click(object sender, EventArgs e)
+        {
+            var m = new Random();
+            int next = m.Next(0, 13);
+            metroStyleManager1.Style = (MetroColorStyle)next;
+            this.Style = metroStyleManager1.Style;
+
+        }
+
+        private void Main_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (sp.IsOpen) { sp.WriteLine("auto"); sp.Close(); }
+            Application.Exit();
+        }
+
+        void list_ref()
+        {
+            listView1.Items.Clear();
+            try
+            {
+                if (sqlConnect.State == ConnectionState.Closed)
+                    sqlConnect.Open();
+                sqlCommand = new SqlCommand("SELECT [user].*FROM [user]", sqlConnect);
+                d = sqlCommand.ExecuteReader();
+                if (d.HasRows)
+                {
+                    while (d.Read())
+                    {
+                        listView1.Items.Add(d["user_id"].ToString());
+                        listView1.Items[listView1.Items.Count - 1].SubItems.Add(d["user_name"].ToString());
+                        listView1.Items[listView1.Items.Count - 1].SubItems.Add(d["password"].ToString());
+
+                        if (d["active"].ToString() == "yes")
+                        {
+                            listView1.Items[listView1.Items.Count - 1].SubItems.Add("Active");
+                            //  listView1.Items[listView1.Items.Count - 1].SubItems[3].BackColor = Color.Blue;
+                        }
+                        if (d["active"].ToString() == "no")
+                        {
+                            listView1.Items[listView1.Items.Count - 1].SubItems.Add("Not active");
+                            // listView1.Items[listView1.Items.Count - 1].SubItems[3].BackColor = Color.Red;
+                        }
+
+                        if (d["role"].ToString() == "Admin")
+                        {
+                            listView1.Items[listView1.Items.Count - 1].SubItems.Add("Administrator");
+                            //   listView1.Items[listView1.Items.Count - 1].SubItems[5].BackColor = Color.Blue;
+                        }
+                        if (d["role"].ToString() == "Client")
+                        {
+                            listView1.Items[listView1.Items.Count - 1].SubItems.Add("client");
+                            // listView1.Items[listView1.Items.Count - 1].SubItems[5].BackColor = Color.Red;
+                        }
+                        listView1.Items[listView1.Items.Count - 1].SubItems.Add(d["date"].ToString());
+                        listView1.Items[listView1.Items.Count - 1].SubItems.Add(d["mobile"].ToString());
+                    }//end while
+                }//end if
+                if (sqlConnect.State == ConnectionState.Open)
+                    sqlConnect.Close();
+            }//end try 
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                sqlConnect.Close();
+            }
+        }
+
+        private void metroTile6_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (sqlConnect.State == ConnectionState.Closed) { sqlConnect.Open(); }
+
+                sqlCommand.Connection = sqlConnect;
+                sqlCommand = new SqlCommand("DELETE FROM [user] WHERE   (user_name = @user_name) AND (user_id <> 1)", sqlConnect);
+                sqlCommand.Parameters.Clear();
+                sqlCommand.Parameters.AddWithValue("@user_name", metroComboBox3.SelectedItem.ToString());
+                sqlCommand.ExecuteNonQuery();
+                list_ref();
+                MetroMessageBox.Show(this, "Finsh Delete", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                metroComboBox3.Items.Clear();
+                try
+                {
+                    metroComboBox3.Items.Clear();
+                    sqlConnect.Open();
+                    sqlCommand = new SqlCommand("SELECT user_name FROM [user] ", sqlConnect);
+                    d = sqlCommand.ExecuteReader();
+                    while (d.Read())
+                    {
+                        if (d.IsDBNull(0))
+                        {
+                        }
+                        else
+                        {
+                            metroComboBox3.Items.Add(d.GetString(0));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.ToString());
+
+                }
+                finally
+                {
+                    sqlConnect.Close();
+                }
+            }
+
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+
+                sqlConnect.Close();
+            }
+        }
+
+        private void metroTabControl2_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (metroTabControl2.SelectedIndex == 1)
+            {
+                metroComboBox2.Items.Clear();
+                try
+                {
+                    if (sqlConnect.State == ConnectionState.Closed)
+                        sqlConnect.Open();
+                    sqlCommand = new SqlCommand("SELECT user_name FROM [user]", sqlConnect);
+                    d = sqlCommand.ExecuteReader();
+                    while (d.Read())
+                    {
+                        if (d.IsDBNull(0))
+                        {
+                        }
+                        else
+                        {
+                            metroComboBox2.Items.Add(d.GetString(0));
+                        }
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                }
+                finally
+                {
+                    sqlConnect.Close();
+                }
+            }
+
+            else if (metroTabControl2.SelectedIndex == 2)
+            {
+                metroComboBox3.Items.Clear();
+                try
+                {
+                    sqlConnect.Open();
+                    sqlCommand = new SqlCommand("SELECT user_name FROM [user] ", sqlConnect);
+                    d = sqlCommand.ExecuteReader();
+                    while (d.Read())
+                    {
+                        if (d.IsDBNull(0))
+                        {
+                        }
+                        else
+                        {
+                            metroComboBox3.Items.Add(d.GetString(0));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                }
+                finally
+                {
+                    sqlConnect.Close();
+                }
+
+            }
+            else if (metroTabControl2.SelectedIndex == 3)
+            {
+                list_ref();
+            }
+        }
+
+        private void metroTile4_Click(object sender, EventArgs e)
+        {
+            if (!(metroTextBox1.Text == "" || metroTextBox2.Text == ""))
+                try
+                {
+                    sqlConnect.Open();
+                    sqlCommand.Connection = sqlConnect;
+                    sqlCommand = new SqlCommand("INSERT INTO [user] ([user_name],  [password],[active],[role],[date],[mobile]) VALUES (@user_name, @user_pass,@user_actve,@user_role,@user_date,@user_moble)", sqlConnect);
+                    sqlCommand.Parameters.Clear();
+                    sqlCommand.Parameters.AddWithValue("@user_name", metroTextBox1.Text);
+                    sqlCommand.Parameters.AddWithValue("@user_pass", metroTextBox2.Text);
+                    if (metroCheckBox1.Checked == true)
+                        sqlCommand.Parameters.AddWithValue("@user_actve", "yes");
+                    else
+                        sqlCommand.Parameters.AddWithValue("@user_actve", "no");
+                    if (metroCheckBox2.Checked == true)
+                        sqlCommand.Parameters.AddWithValue("@user_role", "Admin");
+                    else
+                        sqlCommand.Parameters.AddWithValue("@user_role", "Client");
+                    sqlCommand.Parameters.AddWithValue("@user_date", System.DateTime.Now);
+                    sqlCommand.Parameters.AddWithValue("@user_moble", metroTextBox3.Text);
+                    sqlCommand.ExecuteNonQuery();
+                    
+                    metroTextBox1.Clear();
+                    metroTextBox2.Clear();
+                    metroTextBox3.Clear();
+                    metroCheckBox1.Checked = false;
+                    metroCheckBox2.Checked = false;
+                    MetroMessageBox.Show(this, "Finsh save", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    
+                   
+                }
+
+                catch (Exception ex)
+                {
+                    MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    sqlConnect.Close();
+                }
+        }
+
+        private void metroComboBox2_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (metroComboBox2.SelectedIndex != -1)
+            {
+                try
+                {
+
+                    sqlConnect.Open();
+                    sqlCommand.Connection = sqlConnect;
+                    sqlCommand = new SqlCommand("SELECT  user_name, password, active,role,mobile FROM [user] WHERE  (user_name = @user_name)", sqlConnect);
+                    sqlCommand.Parameters.Clear();
+                    sqlCommand.Parameters.AddWithValue("@user_name", metroComboBox2.SelectedItem);
+                    d = sqlCommand.ExecuteReader();
+                    if (d.Read())
+                    {
+                        if (d.IsDBNull(0))
+                        { }
+                        else
+                            metroTextBox6.Text = d.GetString(0);
+                        if (d.IsDBNull(1))
+                        { }
+                        else
+                            metroTextBox5.Text = d.GetString(1);
+                        if (d.IsDBNull(3))
+                        { }
+                        if (d.GetString(3) == "Admin")
+                            metroCheckBox4.Checked = true;
+                        else
+                            metroCheckBox4.Checked = false;
+                        if (d.IsDBNull(2))
+                        { }
+                        else
+                        {
+                            if (d.GetString(2) == "yes")
+                                metroCheckBox3.Checked = true;
+                            else
+                                metroCheckBox3.Checked = false;
+
+                        }
+                        if (d.IsDBNull(4))
+                        { }
+                        else
+                            metroTextBox4.Text = d.GetString(4).ToString();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    sqlConnect.Close();
+                }
+            }
+        }
+
+        private void metroTile5_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sqlConnect.Open();
+                sqlCommand.Connection = sqlConnect;
+                sqlCommand = new SqlCommand("UPDATE [user] SET user_name= @user_name, password= @user_pass, active= @user_actve ,role = @user_role ,mobile=@user_moble WHERE (user_name = @name) ", sqlConnect);
+                sqlCommand.Parameters.Clear();
+                sqlCommand.Parameters.AddWithValue("@user_name", metroTextBox6.Text);
+                sqlCommand.Parameters.AddWithValue("@user_pass", metroTextBox5.Text);
+                sqlCommand.Parameters.AddWithValue("@user_moble", metroTextBox4.Text);
+                if (metroCheckBox4.Checked == true)
+                    sqlCommand.Parameters.AddWithValue("@user_actve", "yes");
+                else
+                    sqlCommand.Parameters.AddWithValue("@user_actve", "no");
+                if (metroCheckBox3.Checked == true)
+                    sqlCommand.Parameters.AddWithValue("@user_role", "Admin");
+                else
+                    sqlCommand.Parameters.AddWithValue("@user_role", "Client");
+                sqlCommand.Parameters.AddWithValue("@name", metroComboBox2.SelectedItem.ToString());
+                sqlCommand.ExecuteNonQuery();
+                MetroMessageBox.Show(this, "Finsh Update", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                metroTextBox4.Clear();
+                metroTextBox5.Clear();
+                metroTextBox6.Clear();
+                metroCheckBox3.Checked = false;
+                metroCheckBox4.Checked = false;
+                metroComboBox2.Items.Clear();
+                if (sqlConnect.State == ConnectionState.Closed)
+                    sqlConnect.Open();
+                sqlCommand = new SqlCommand("SELECT user_name FROM [user]", sqlConnect);
+                d = sqlCommand.ExecuteReader();
+                while (d.Read())
+                {
+                    if (d.IsDBNull(0))
+                    {
+                    }
+                    else
+                    {
+                        metroComboBox2.Items.Add(d.GetString(0));
+                    }
+                }
+            }
+
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                sqlConnect.Close();
+            }
+        }
+
+        private void metroTile1_Click(object sender, EventArgs e)
+        {
+            bool error = false;
+
+            // If the port is open, close it.
+            if (sp.IsOpen)
+            {
+                sp.Close();
+                metroPanel14.Enabled = !sp.IsOpen;
+                metroPanel15.Enabled = !sp.IsOpen;
+                metroPanel17.Enabled = !sp.IsOpen;
+                metroPanel18.Enabled = !sp.IsOpen;
+                metroPanel20.Enabled = !sp.IsOpen;
+                metroPanel12.Enabled = !sp.IsOpen;
+
+            }
+            else
+            {
+                try
+                {
+                    sErial();
+                }
+                catch (UnauthorizedAccessException) { error = true; }
+                catch (IOException) { error = true; }
+                catch (ArgumentException) { error = true; }
+                if (error) MetroMessageBox.Show(this, "Could not open the COM port.Most likely it is already in use, has been removed, or is unavailable.", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                
+
+            }
+
+            EnableControls();
+        }
+
+        private void metroTrackBar1_Scroll(object sender, ScrollEventArgs e)
+        {
+
+        }
+
+       
+
+        private void metroPanel13_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+            //if (!(metroTextBox7.Text == "" || metroTextBox8.Text == ""))
+            //    try
+            //    {
+
+            //        selectQueryString = "SELECT user_name, password,role,active  FROM [user] WHERE user_name='" + metroTextBox7.Text + "' and password='" + metroTextBox8.Text + "'";
+            //        sqlConnect.Open();
+            //        sqlDataAdapter = new SqlDataAdapter(selectQueryString, sqlConnect);
+            //        sqlCommandBuilder = new SqlCommandBuilder(sqlDataAdapter);
+            //        dataTable = new DataTable();
+            //        sqlDataAdapter.Fill(dataTable);
+            //        if (dataTable.Rows.Count > 0)
+            //        {
+            //            if (dataTable.Rows[0][3].ToString() == "yes")
+            //            {
+            //                username = metroTextBox7.Text;
+            //                password = metroTextBox8.Text;
+            //                if (dataTable.Rows[0][2].ToString() == "Admin")
+            //                {
+            //                    metroLabel16.Text = "Welcome " + metroTextBox7.Text;
+            //                    metroTextButton1.Text = "Logout";
+            //                    metroPanel1.Enabled = true;
+            //                    metroTextButton4.Enabled = true;
+            //                    metroTextButton5.Enabled = true;
+            //                    metroTextButton2.Enabled = true;
+            //                    metroTextButton6.Enabled = true;
+            //                    metroTextButton7.Enabled = true;
+            //                    metroTextButton8.Enabled = true;
+            //                    metroTextButton3.Enabled = true;
+
+            //                }
+            //                else if (dataTable.Rows[0][2].ToString() == "Client")
+            //                {
+            //                    metroLabel16.Text = "Welcome " + metroTextBox7.Text;
+            //                    metroTextButton1.Text = "Logout";
+            //                    metroPanel1.Enabled = true;
+            //                    metroTextButton4.Enabled = true;
+            //                    metroTextButton5.Enabled = true;
+            //                    metroTextButton2.Enabled = true;
+            //                    metroTextButton6.Enabled = true;
+            //                    metroTextButton7.Enabled = true;
+            //                    metroTextButton8.Enabled = true;
+            //                    metroTextButton3.Enabled = true;
+
+            //                }
+            //                metroTextBox7.Clear();
+            //                metroTextBox8.Clear();
+            //                metroTextButton5.PerformClick();
+            //            }
+            //            else
+            //            {
+            //                MetroMessageBox.Show(this, "User not active contact admin", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            
+            //                metroTextBox7.Clear();
+            //                metroTextBox8.Clear();
+            //            }
+            //        }
+            //        else
+            //        {
+            //            MetroMessageBox.Show(this, "User name/password is wrong.", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            //            metroTextBox7.Clear();
+            //            metroTextBox8.Clear();
+            //        }
+            //    }
+            //    catch (Exception ex)
+            //    {
+            //        MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            //    }
+            //    finally
+            //    {
+
+            //        sqlConnect.Close();
+            //    }
+        }
+
+        private void button2_Click_1(object sender, EventArgs e)
+        {
+            gasalarm g = new gasalarm();
+            g.Show();
+        }
+
+        private void metroPanel2_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void metroTextButton1_Click(object sender, EventArgs e)
+        {
+            if (metroTextButton1.Text == "Login")
+            {
+                metroPanel4.Visible = false;
+                metroPanel13.Visible = false;
+                metroPanel8.Visible = false;
+                metroPanel9.Visible = false;
+                metroPanel6.Visible = false;
+                metroPanel5.Visible = false;
+                metroPanel3.Visible = false;
+                metroPanel7.Visible = true;
+                metroPanel7.BringToFront();
+               // metroLabel16.Text = "Plz Login to access the system";
+
+            }
+            else
+            {
+                metroTextButton5.PerformClick();
+                metroTextButton1.Text = "Login";
+              // metroLabel16.Text = "Plz Login to access the system";
+                metroTextButton6.Enabled = false;
+                metroTextButton7.Enabled = false;
+                metroTextButton8.Enabled = false;
+                metroTextButton4.Enabled = false;
+                metroTextButton5.Enabled = false;
+                metroTextButton2.Enabled = false;
+                metroTextButton3.Enabled = false;
+
+            }
+        }
+
+        private void metroTextButton2_Click(object sender, EventArgs e)
+        {
+            metroPanel4.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel13.Visible = true;
+        }
+
+        private void metroTextButton3_Click(object sender, EventArgs e)
+        {
+            metroPanel4.Visible = false;
+            metroPanel13.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel5.Visible = true;
+        }
+
+        private void metroTextButton4_Click(object sender, EventArgs e)
+        {
+            metroPanel4.Visible = false;
+            metroPanel13.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel3.Visible = true;
+        }
+
+        private void metroTextButton5_Click(object sender, EventArgs e)
+        {
+            metroPanel13.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel4.Visible = true;
+        }
+
+        private void metroTextButton6_Click(object sender, EventArgs e)
+        {
+            metroPanel4.Visible = false;
+            metroPanel13.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel6.Visible = true;
+        }
+
+        private void metroTextButton7_Click(object sender, EventArgs e)
+        {
+            metroPanel4.Visible = false;
+            metroPanel13.Visible = false;
+            metroPanel9.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel8.Visible = true;
+        }
+
+        private void metroTextButton8_Click(object sender, EventArgs e)
+        {
+            metroPanel4.Visible = false;
+            metroPanel13.Visible = false;
+            metroPanel6.Visible = false;
+            metroPanel8.Visible = false;
+            metroPanel7.Visible = false;
+            metroPanel5.Visible = false;
+            metroPanel3.Visible = false;
+            metroPanel9.Visible = true;
+        }
+            
+
+        private void metroPanel20_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void metroTextButton11_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("auto");
+            }
+            catch(Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton12_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("manu");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton13_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("dor1");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton14_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("dor0");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton18_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("auto");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton17_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("manu");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton20_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li21");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton19_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li20");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton15_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li12");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton16_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li13");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton22_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li11");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton28_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("auto");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton27_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("manu");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton24_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li31");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTextButton21_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                sp.WriteLine("li30");
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroTrackBar1_ValueChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                
+
+            if (metroTrackBar1.Value>70)
+            {
+                    sp.WriteLine("fun3");
+                }
+            else if (metroTrackBar1.Value<70 && metroTrackBar1.Value >15)
+            {
+                    sp.WriteLine("fun2");
+                }
+            else if (metroTrackBar1.Value <= 10)
+            {
+                    sp.WriteLine("fun1");
+                }
+            }
+            catch (Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void metroGrid2_CellContentClick(object sender, DataGridViewCellEventArgs e)
+        {
+
+        }
+
+        private void metroLabel17_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void listView2_SelectedIndexChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void metroComboBox5_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (metroComboBox5.SelectedIndex == 0)
+            {
+                if (metroCheckBox5.Checked == false)
+                {
+                    try
+                    {
+                        if (sqlConnect.State == ConnectionState.Closed)
+                        {
+                            sqlConnect.Open();
+                        }
+                        //SELECT sen_name000000000012,r_time,r_data FROM sensor s, DMS_report r WHERE s.sen_name='Gas'
+                        //SELECT sen_name FROM[sensor]  WHERE section_id = (SELECT floor_Id FROM[floor] WHERE floor_Id = @d1)", sqlConne
+                        sqlCommand = new SqlCommand("SELECT sen_name AS sensor,r_time AS repot_Time,r_data AS data FROM sensor s, DMS_report r ORDER BY r_time", sqlConnect);
+                        sqlDataAdapter = new SqlDataAdapter(sqlCommand);
+                        DataTable table = new DataTable();
+                        sqlDataAdapter.Fill(table);
+                        sqlConnect.Close();
+                        dataGridView1.DataSource = table;
+
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    finally
+                    {
+                        if (sqlConnect.State == ConnectionState.Open)
+                            sqlConnect.Close();
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        if (sqlConnect.State == ConnectionState.Closed)
+                        {
+                            sqlConnect.Open();
+                        }
+                        sqlCommand = new SqlCommand("SELECT sen_name AS sensor,r_time AS Report_Time,r_data AS Data FROM sensor s, DMS_report r WHERE r_time BETWEEN @time1 AND @time2 ORDER BY r_time", sqlConnect);
+                        sqlCommand.Parameters.Clear();
+                        sqlCommand.Parameters.AddWithValue("@time1", metroDateTime1.Value);
+                        sqlCommand.Parameters.AddWithValue("@time2", metroDateTime2.Value);
+                        sqlDataAdapter = new SqlDataAdapter(sqlCommand);
+                        DataTable table = new DataTable();
+                        sqlDataAdapter.Fill(table);
+                        sqlConnect.Close();
+                        dataGridView1.DataSource = table;
+
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    finally
+                    {
+                        if (sqlConnect.State == ConnectionState.Open)
+                            sqlConnect.Close();
+                    }
+                }
+            }
+            //else if(metroComboBox5.SelectedIndex == metroComboBox5.SelectionLength)
+            //{
+               
+            //}
+            else
+            {
+                if (metroCheckBox5.Checked == false)
+                {
+                    try
+                    {
+                        if (sqlConnect.State == ConnectionState.Closed)
+                        {
+                            sqlConnect.Open();
+                        }
+                        //SELECT sen_name FROM[sensor]  WHERE section_id = (SELECT floor_Id FROM[floor] WHERE floor_Id = @d1)", sqlConne
+                        sqlCommand = new SqlCommand("SELECT r_time AS Report_Time,r_data AS Data FROM [DMS_report]  WHERE sen_id=@d1", sqlConnect);
+                        sqlCommand.Parameters.Clear();
+                        sqlCommand.Parameters.AddWithValue("@d1", metroComboBox5.SelectedIndex);
+                        sqlDataAdapter = new SqlDataAdapter(sqlCommand);
+                        DataTable table = new DataTable();
+                        sqlDataAdapter.Fill(table);
+                        sqlConnect.Close();
+                        dataGridView1.DataSource = table;
+
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    finally
+                    {
+                        if (sqlConnect.State == ConnectionState.Open)
+                            sqlConnect.Close();
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        if (sqlConnect.State == ConnectionState.Closed)
+                        {
+                            sqlConnect.Open();
+                        }
+
+                        //SELECT sen_name,r_time,r_data FROM sensor s, DMS_report r WHERE s.sen_name='Gas'
+                        sqlCommand = new SqlCommand("SELECT sen_name AS sensor,r_time AS Report_Time,r_data AS Data FROM sensor s, DMS_report r WHERE s.sen_name=@d1 AND r_time BETWEEN @time1 AND @time2 ORDER BY r_time", sqlConnect);
+                        sqlCommand.Parameters.Clear();
+                        sqlCommand.Parameters.AddWithValue("@d1", metroComboBox5.SelectedItem);
+                        sqlCommand.Parameters.AddWithValue("@time1", metroDateTime1.Value);
+                        sqlCommand.Parameters.AddWithValue("@time2", metroDateTime2.Value);
+                        sqlDataAdapter = new SqlDataAdapter(sqlCommand);
+                        DataTable table = new DataTable();
+                        sqlDataAdapter.Fill(table);
+                        sqlConnect.Close();
+                        dataGridView1.DataSource = table;
+
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    finally
+                    {
+                        if (sqlConnect.State == ConnectionState.Open)
+                            sqlConnect.Close();
+                    }
+                }
+                }
+
+            }
+
+        private void metroTextButton10_Click(object sender, EventArgs e)
+        {
+            try
+            {
+            PdfPTable pdfTable = new PdfPTable(dataGridView1.ColumnCount);
+            pdfTable.DefaultCell.Padding = 3;
+            pdfTable.WidthPercentage = 70;
+            pdfTable.HorizontalAlignment = Element.ALIGN_LEFT;
+            pdfTable.DefaultCell.BorderWidth = 1;
+
+            //Adding Header row
+            foreach (DataGridViewColumn column in dataGridView1.Columns)
+            {
+                PdfPCell cell = new PdfPCell(new Phrase(column.HeaderText));
+                cell.BackgroundColor = new iTextSharp.text.Color(240, 240, 240);
+                pdfTable.AddCell(cell);
+            }   
+
+            //Adding DataRow
+            foreach (DataGridViewRow row in dataGridView1.Rows)
+            {
+                foreach (DataGridViewCell cell in row.Cells)
+                {
+                    pdfTable.AddCell(cell.Value.ToString());
+                }
+            }
+                
+                string path = null;
+                SaveFileDialog saveDialog = new SaveFileDialog();
+                saveDialog.Title = "Save";
+                saveDialog.Filter = "Adobe aAcrobat Files (*.pdf)|*.pdf";
+                if (saveDialog.ShowDialog() == DialogResult.OK)
+                {
+                    path = saveDialog.FileName;
+                    using (FileStream stream = new FileStream(path , FileMode.Create))
+                    {
+                        Document pdfDoc = new Document(PageSize.A2, 50, 50, 25, 25);
+                        PdfWriter.GetInstance(pdfDoc, stream);
+                        pdfDoc.Open();
+                        var title = FontFactory.GetFont("Arial",25,Convert.ToInt32(Font.Bold));
+                        Paragraph header = new Paragraph("Buliding Managment System", title);
+                        header.Alignment = Element.ALIGN_CENTER;
+                        pdfDoc.Add(header);
+                        pdfDoc.NewPage();
+                        pdfDoc.Add(pdfTable);
+                        pdfDoc.Close();
+                        stream.Close();
+                        MetroMessageBox.Show(this, "PDF Created!", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            
+        }
+            catch(Exception ex)
+            {
+                MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+}
+
+        private void metroComboBox1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if(metroComboBox1.SelectedIndex==0)
+            {
+                RefreshSerialPortList();
+            }
+        }
+
+        private void metroPanel3_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void CmdLogin_Click(object sender, EventArgs e)
+        {
+            if (Strings.Len(Strings.Trim(metroTextBox7.Text)) == 0)
+            {
+                MessageBox.Show("Please enter user name", "Input Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                metroTextBox7.Focus();
+                return;
+            }
+
+            else if (Strings.Len(Strings.Trim(metroTextBox8.Text)) == 0)
+            {
+                MessageBox.Show("Please enter password", "Input Error", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                metroTextBox8.Focus();
+                return;
+            }
+
+            if (!(metroTextBox7.Text == "" || metroTextBox8.Text == ""))
+                try
+                {
+
+                    selectQueryString = "SELECT user_name, password,role,active  FROM [user] WHERE user_name='" + metroTextBox7.Text + "' and password='" + metroTextBox8.Text + "'";
+                    sqlConnect.Open();
+                    sqlDataAdapter = new SqlDataAdapter(selectQueryString, sqlConnect);
+                    sqlCommandBuilder = new SqlCommandBuilder(sqlDataAdapter);
+                    dataTable = new DataTable();
+                    sqlDataAdapter.Fill(dataTable);
+                    if (dataTable.Rows.Count > 0)
+                    {
+                        if (dataTable.Rows[0][3].ToString() == "yes")
+                        {
+                            username = metroTextBox7.Text;
+                            password = metroTextBox8.Text;
+                            if (dataTable.Rows[0][2].ToString() == "Admin")
+                            {
+                                //metroLabel16.Text = "Welcome " + metroTextBox7.Text;
+                                metroTextButton1.Text =  metroTextBox7.Text + " "+ "|"+ "   " + "Logout" ;
+                                metroPanel1.Enabled = true;
+                                metroTextButton4.Enabled = true;
+                                metroTextButton5.Enabled = true;
+                                metroTextButton2.Enabled = true;
+                                metroTextButton6.Enabled = true;
+                                metroTextButton7.Enabled = true;
+                                metroTextButton8.Enabled = true;
+                                metroTextButton3.Enabled = true;
+
+                            }
+                            else if (dataTable.Rows[0][2].ToString() == "Client")
+                            {
+                               // metroLabel16.Text = "Welcome " + metroTextBox7.Text;
+                                metroTextButton1.Text =   metroTextBox7.Text + " "+ "|" + "   " + "Logout";
+                                metroPanel1.Enabled = true;
+                                metroTextButton4.Enabled = true;
+                                metroTextButton5.Enabled = true;
+                                metroTextButton2.Enabled = true;
+                                metroTextButton6.Enabled = true;
+                                metroTextButton7.Enabled = true;
+                                metroTextButton8.Enabled = true;
+                                metroTextButton3.Enabled = true;
+
+                            }
+                            metroTextBox7.Clear();
+                            metroTextBox8.Clear();
+                            metroTextButton5.PerformClick();
+                        }
+                        else
+                        {
+                            MetroMessageBox.Show(this, "User not active contact admin", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                            metroTextBox7.Clear();
+                            metroTextBox8.Clear();
+                        }
+                    }
+                    else
+                    {
+                        MetroMessageBox.Show(this, "User name/password is wrong.", "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        metroTextBox7.Clear();
+                        metroTextBox8.Clear();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MetroMessageBox.Show(this, ex.Message, "Buliding Managment System", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+
+                    sqlConnect.Close();
+                }
+        }
+
+        private void CmdCancel_Click(object sender, EventArgs e)
+        {
+            System.Environment.Exit(0);
+        }
+
+        private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void metroComboBox4_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                if (sqlConnect.State == ConnectionState.Closed)
+                {
+                    sqlConnect.Open();
+                }
+                sqlCommand = new SqlCommand("SELECT start_time,end_time,wat AS wat FROM light_power ", sqlConnect);
+                sqlDataAdapter = new SqlDataAdapter(sqlCommand);
+                DataTable table = new DataTable();
+                sqlDataAdapter.Fill(table);
+                sqlConnect.Close();
+                dataGridView1.DataSource = table;
+
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                if (sqlConnect.State == ConnectionState.Open)
+                    sqlConnect.Close();
+            }
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            if (metroTextButton1.Text == "Login")
+            {
+                metroPanel4.Visible = false;
+                metroPanel13.Visible = false;
+                metroPanel8.Visible = false;
+                metroPanel9.Visible = false;
+                metroPanel6.Visible = false;
+                metroPanel5.Visible = false;
+                metroPanel3.Visible = false;
+                metroPanel7.Visible = true;
+                metroPanel7.BringToFront();
+                // metroLabel16.Text = "Plz Login to access the system";
+
+            }
+            else
+            {
+                metroTextButton5.PerformClick();
+                metroTextButton1.Text = "Login";
+                // metroLabel16.Text = "Plz Login to access the system";
+                metroTextButton6.Enabled = false;
+                metroTextButton7.Enabled = false;
+                metroTextButton8.Enabled = false;
+                metroTextButton4.Enabled = false;
+                metroTextButton5.Enabled = false;
+                metroTextButton2.Enabled = false;
+                metroTextButton3.Enabled = false;
+
+            }
+        }
+
+        private void metroPanel1_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+    }
+}
+
